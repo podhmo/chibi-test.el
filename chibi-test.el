@@ -1,0 +1,232 @@
+;;; chibi-test.el --- chibi unittest
+
+;; Copyright (C) 2011  podhmo
+
+;; Author: podhmo <ababjam61@gmail.com>
+;; Keywords: lisp
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; 
+
+;;; Code:
+(require 'cl)
+
+;; internal variables
+(defvar chibi-test:output-buffer-name "* chibi test output *")
+(defvar chibi-test:prefix-space-vector
+  (apply 'vector
+         (loop for i from 0 to 20 by 2
+               collect (make-string i ? ))))
+(defvar chibi-test:current-level 0)
+(defvar chibi-test:success-count 0)
+(defvar chibi-test:fail-count 0)
+
+(defun chibi-test:output (&rest args)
+  (with-current-buffer (get-buffer-create chibi-test:output-buffer-name)
+    (let ((prefix-space (aref chibi-test:prefix-space-vector 
+                              chibi-test:current-level
+                              )))
+      (dolist (e args)
+        (insert (format "%s%s" prefix-space e) "\n"))))
+  (display-buffer chibi-test:output-buffer-name))
+
+(defun chibi-test:clear () (interactive)
+  (let ((buf (get-buffer chibi-test:output-buffer-name)))
+    (and buf
+         (with-current-buffer buf
+           (erase-buffer)))
+    (setq chibi-test:success-count 0)
+    (setq chibi-test:fail-count 0)))
+
+
+(defface chibi-test:success-message-face
+  '((t
+     (:foreground "spring green"
+                  ;;:background "dark grey"
+                  :italic t
+                  :bold t)))
+  "")
+(defvar chibi-test:success-message-face 'chibi-test:success-message-face)
+
+(defface chibi-test:fail-message-face
+  '((t
+     (:foreground "orange red"
+                  ;;:background "dark grey"
+                  :italic t
+                  :bold t)))
+  "")
+(defvar chibi-test:fail-message-face 'chibi-test:fail-message-face)
+(defface chibi-test:fail-return-value-face
+  '((t
+     (:foreground "dark magenta"
+                  ;;:background "dark grey"
+                  :italic t
+                  :bold t)))
+  "")
+(defvar chibi-test:fail-return-value-face 'chibi-test:fail-return-value-face)
+
+
+(defvar chibi-test:max-length 20)
+(defun* chibi-test:truncate (x &optional (max-length chibi-test:max-length))
+  (let ((content (format "%s"  x)))
+    (cond ((<= (length content) max-length) content)
+          (t (concat (substring content 0 max-length) "...")))))
+
+(defmacro chibi-test:test (message expect expr)
+  (let ((result (gensym)))
+    `(progn
+       (chibi-test:output ,message)
+       (let ((,result ,expr))
+         (cond ((equal ,expect ,result)
+                (chibi-test:output 
+                 (propertize (format "ok! %s" (chibi-test:truncate ,result))
+                             'face 'chibi-test:success-message-face))
+                 (incf chibi-test:success-count))
+               (t
+                (chibi-test:output 
+                 (propertize (format "fail! expect: %s" ,expect)
+                             'face 'chibi-test:fail-message-face))
+                (chibi-test:output
+                 (propertize (format "      return: %s" ,result)
+                             'face 'chibi-test:fail-return-value-face))
+                (incf chibi-test:fail-count)))))))
+
+(defun chibi-test:section (section)
+  (chibi-test:output (format "\nsection --%s------------" section)))
+
+
+;;; DSL
+(defun chibi-test:mapcar-safe (fn maybe-list)
+  "mapcar enable to iterate maybe-list (include dot-list)"
+  (let ((r (list)) (xs maybe-list))
+    (condition-case e
+        (progn
+          (while (not (null xs))
+            (push (funcall fn (car xs)) r)
+            (setq xs (cdr xs)))
+          (nreverse r))
+      (wrong-type-argument 
+       (let ((r* (nreverse r)))
+         (setcdr (last r*) (funcall fn xs))
+         r*)))))
+
+(defmacro chibi-test:expect-macro (body)
+  `(macroexpand-all (quote ,body)))
+
+(defmacro with-chibi-test (&rest exprs)
+  (labels ((%replace-and-status
+            (expr)
+            (destructuring-bind (func . args) expr
+              (case func
+                ((section section:)
+                 (destructuring-bind (section-content . child-exprs) args
+                   (values `(progn 
+                              (chibi-test:section ,section-content)
+                              ,@(%rec-replace-tree child-exprs))
+                           t 1)))
+                ((clear clear:) (values `(chibi-test:clear ,@(%rec-replace-tree args)) t 0))
+                ((test test:) (values `(chibi-test:test ,@(%rec-replace-tree args)) t 1))
+                ((macro macro:) (values `(chibi-test:expect-macro ,@args) t 0))
+                (otherwise (values expr nil 0)))))
+
+           (%change-depth-with-delta
+            (body delta)
+            (cond ((<= delta 0) body)
+                  (t
+                   `(progn 
+                      (incf chibi-test:current-level ,delta)
+                      ,body
+                      (decf chibi-test:current-level ,delta)))))
+
+           (%rec-replace-tree
+            (tree)
+            (chibi-test:mapcar-safe
+             #'(lambda (x)
+                 (cond ((listp x)
+                        (multiple-value-bind (x* status delta) (%replace-and-status x)
+                          (cond (status (%change-depth-with-delta x* delta))
+                                (t x*))))
+                       ((or (eq x 'clear) (eq x 'clear:)) `(chibi-test:clear))
+                       (t x)))
+             tree)))
+    `(progn
+       ,@(%rec-replace-tree exprs)
+       (chibi-test:short-description))))
+
+(defun chibi-test:short-description ()
+  (let ((short-description (format "
+========= short discription ===========
+  Total: %d  OK: %d  NG: %d
+=======================================
+"
+                                   (+ chibi-test:success-count chibi-test:fail-count)
+                                   chibi-test:success-count
+                                   chibi-test:fail-count)))
+    (if (<= chibi-test:fail-count 0)
+        (chibi-test:output short-description)
+        (chibi-test:output
+         (propertize short-description 'face 'chibi-test:fail-message-face)))))
+
+
+(defmacro with-chibi-test* (&rest exprs)
+  `(with-chibi-test
+    clear
+    ,@exprs))
+
+;;; test
+(defvar chibi-test-is-running-p nil)
+(when chibi-test-is-running-p
+  ;; Don't use chibi-test:<foo> directly as bellow
+  (chibi-test:clear)
+  (chibi-test:section "using chibi-test:macro, directly")
+  (chibi-test:test "1+1" 2 (+ 1 1))
+  (chibi-test:test "with-chibi-test(simple)"
+                   '(progn
+                      (progn
+                        (setq chibi-test:current-level (+ chibi-test:current-level 1))
+                        (chibi-test:section "section")
+                        (setq chibi-test:current-level (- chibi-test:current-level 1))))
+                   (chibi-test:expect-macro
+                    (with-chibi-test
+                     (section "section"))))
+
+  ;; using `with-chibi-test*' rather than `with-chibi-test'
+  (with-chibi-test
+   clear ;; when using `with-chibi-test' clear output buffer manually
+   (section "with-chibi-test, with `with-chibi-test'"
+            (test "1+1=2" 2 (+ 1 1))))
+
+  (with-chibi-test*
+   (section "utitlity"
+            (test 'chibi-test:truncate1 "xx" (chibi-test:truncate "xx"))
+            (test 'chibi-test:truncate2 "xx000..."
+                  (chibi-test:truncate "xx00000000000" 5)))
+
+   (section "macro"
+            (test "with-chibi-test+section(simple)"
+                  '(progn
+                     (progn
+                       (setq chibi-test:current-level (+ chibi-test:current-level 1))
+                       (progn (chibi-test:section "section"))
+                       (setq chibi-test:current-level (- chibi-test:current-level 1)))
+                     (chibi-test:short-description))
+                  (macro
+                   (with-chibi-test
+                    (section "section"))))))
+  )
+(provide 'chibi-test)
+;;; chibi-test.el ends here
