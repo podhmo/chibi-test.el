@@ -1,8 +1,8 @@
-* chibi test
+# chibi test
 
 chibi unittest
 
-** example
+## example
 
 how to use this as below.
 
