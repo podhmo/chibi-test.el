@@ -45,8 +45,9 @@
 (defvar chibi-test:output-buffer-name "* chibi test output *")
 (defvar chibi-test:prefix-space-vector
   (apply 'vector
-         (loop for i from 0 to 20 by 2
-               collect (make-string i ? ))))
+         (cons ""
+               (loop for i from 0 to 30 by 3
+                     collect (make-string i ? )))))
 (defvar chibi-test:current-level 0)
 (defvar chibi-test:success-count 0)
 (defvar chibi-test:fail-count 0)
@@ -59,6 +60,11 @@
       (dolist (e args)
         (insert (format "%s%s" prefix-space e) "\n"))))
   (display-buffer chibi-test:output-buffer-name))
+
+(defun chibi-test:output* (&rest args)
+  (with-current-buffer (get-buffer-create chibi-test:output-buffer-name)
+    (insert "\n"))
+  (apply 'chibi-test:output args))
 
 (defun chibi-test:clear () (interactive)
   (let ((buf (get-buffer chibi-test:output-buffer-name)))
@@ -105,7 +111,7 @@
 (defmacro chibi-test:test (message expect expr)
   (let ((result (gensym)))
     `(progn
-       (chibi-test:output ,message)
+       (chibi-test:output (format "test: %s" ,message))
        (let ((,result ,expr))
          (cond ((equal ,expect ,result)
                 (chibi-test:output 
@@ -122,7 +128,7 @@
                 (incf chibi-test:fail-count)))))))
 
 (defun chibi-test:section (section)
-  (chibi-test:output (format "\nsection --%s------------" section)))
+  (chibi-test:output* (format "section --%s------------" section)))
 
 
 ;;; DSL
@@ -150,31 +156,29 @@
               (case func
                 ((section section:)
                  (destructuring-bind (section-content . child-exprs) args
-                   (values `(progn 
-                              (chibi-test:section ,section-content)
-                              ,@(%rec-replace-tree child-exprs))
-                           t 1)))
-                ((clear clear:) (values `(chibi-test:clear ,@(%rec-replace-tree args)) t 0))
-                ((test test:) (values `(chibi-test:test ,@(%rec-replace-tree args)) t 1))
-                ((macro macro:) (values `(chibi-test:expect-macro ,@args) t 0))
-                (otherwise (values expr nil 0)))))
+                   (values `(chibi-test:section ,section-content)
+                           t 1
+                           (%rec-replace-tree child-exprs))))
+                ((clear clear:) (values `(chibi-test:clear ,@(%rec-replace-tree args)) t 0 nil))
+                ((test test:) (values `(chibi-test:test ,@(%rec-replace-tree args)) t 1 nil))
+                ((macro macro:) (values `(chibi-test:expect-macro ,@args) t 0 nil))
+                (otherwise (values expr nil 0 nil)))))
 
            (%change-depth-with-delta
-            (body delta)
+            (body delta &optional chidren)
             (cond ((<= delta 0) body)
                   (t
                    `(progn 
                       (incf chibi-test:current-level ,delta)
-                      ,body
+                      ,body ,@chidren
                       (decf chibi-test:current-level ,delta)))))
-
            (%rec-replace-tree
             (tree)
             (chibi-test:mapcar-safe
              #'(lambda (x)
                  (cond ((listp x)
-                        (multiple-value-bind (x* status delta) (%replace-and-status x)
-                          (cond (status (%change-depth-with-delta x* delta))
+                        (multiple-value-bind (x* status delta children) (%replace-and-status x)
+                          (cond (status (%change-depth-with-delta x* delta children))
                                 (t x*))))
                        ((or (eq x 'clear) (eq x 'clear:)) `(chibi-test:clear))
                        (t x)))
@@ -205,6 +209,7 @@
 
 ;;; test
 (defvar chibi-test-is-running-p nil)
+;;(setq chibi-test-is-running-p t)
 (when chibi-test-is-running-p
   ;; Don't use chibi-test:<foo> directly as bellow
   (chibi-test:clear)
@@ -237,7 +242,7 @@
                   '(progn
                      (progn
                        (setq chibi-test:current-level (+ chibi-test:current-level 1))
-                       (progn (chibi-test:section "section"))
+                       (chibi-test:section "section")
                        (setq chibi-test:current-level (- chibi-test:current-level 1)))
                      (chibi-test:short-description))
                   (macro
