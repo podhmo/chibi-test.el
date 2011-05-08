@@ -129,6 +129,17 @@
    :prefix "test-not"
    :condition-function 'chibi-test:test-not-condition))
 
+(defmacro chibi-test:test-true (message expr)
+  (chibi-test:test-internal
+   message t expr
+   :prefix "test-true"
+   :condition-function 'chibi-test:test-condition))
+
+(defmacro chibi-test:test-false (message expr)
+  (chibi-test:test-internal
+   message nil  expr
+   :prefix "test-false"
+   :condition-function 'chibi-test:test-condition))
 
 (defun* chibi-test:test-internal
     (message expect expr
@@ -161,6 +172,7 @@
 ;;; DSL
 (defvar chibi-test:hide-after-n-sec 3)
 (defvar chibi-test:hide-view-result-p t)
+(defvar chibi-test:hide-view-result-timer nil)
 
 (defun chibi-test:hide-view-result ()
   (let ((buf (get-buffer chibi-test:output-buffer-name)))
@@ -171,13 +183,18 @@
         (and output-window
              (delete-window output-window))
         (message "chibi-test: -- hide view result --")))))
-      
 
 (defun chibi-test:hide-view-result-after-n-sec (&optional sec)
   (let ((sec (or sec chibi-test:hide-after-n-sec)))
     (when chibi-test:hide-view-result-p
-      (run-with-timer 
-       sec  nil 'chibi-test:hide-view-result))))
+      
+      (when chibi-test:hide-view-result-timer
+        (cancel-timer chibi-test:hide-view-result-timer)
+        (setq hibi-test:hide-view-result-timer nil))
+
+      (setq chibi-test:hide-view-result-timer
+            (run-with-timer 
+             sec  nil 'chibi-test:hide-view-result)))))
 
 (defun chibi-test:mapcar-safe (fn maybe-list)
   "mapcar enable to iterate maybe-list (include dot-list)"
@@ -204,8 +221,10 @@
                            t 1
                            (%rec-replace-tree child-exprs))))
                 ((clear clear:) (values `(chibi-test:clear ,@(%rec-replace-tree args)) t 0 nil))
-                ((test-not test-not:) (values `(chibi-test:test-not ,@(%rec-replace-tree args)) t 1 nil))
                 ((test test:) (values `(chibi-test:test ,@(%rec-replace-tree args)) t 1 nil))
+                ((test-not test-not:) (values `(chibi-test:test-not ,@(%rec-replace-tree args)) t 1 nil))
+                ((test-true test-true:) (values `(chibi-test:test-true ,@(%rec-replace-tree args)) t 1 nil))
+                ((test-false test-false:) (values `(chibi-test:test-false ,@(%rec-replace-tree args)) t 1 nil))
                 ((macro macro:) (values `(chibi-test:expect-macro ,@args) t 0 nil))
                 (otherwise (values `(,func ,@(%rec-replace-tree args)) nil 0 nil)))))
 
