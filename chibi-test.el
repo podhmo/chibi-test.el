@@ -133,8 +133,30 @@
 (defun chibi-test:section (section)
   (chibi-test:output* (format "section --%s------------" section)))
 
+(defmacro chibi-test:expect-macro (body)
+  `(macroexpand-all (quote ,body)))
 
 ;;; DSL
+(defvar chibi-test:hide-after-n-sec 3)
+(defvar chibi-test:hide-view-result-p t)
+
+(defun chibi-test:hide-view-result ()
+  (let ((buf (get-buffer chibi-test:output-buffer-name)))
+    (unless (equal buf (current-buffer))
+      (let ((output-window 
+             (find buf (window-list)
+                   :test (lambda (b w) (equal b (window-buffer w))))))
+        (and output-window
+             (delete-window output-window))
+        (message "chibi-test: -- hide view result --")))))
+      
+
+(defun chibi-test:hide-view-result-after-n-sec (&optional sec)
+  (let ((sec (or sec chibi-test:hide-after-n-sec)))
+    (when chibi-test:hide-view-result-p
+      (run-with-timer 
+       sec  nil 'chibi-test:hide-view-result))))
+
 (defun chibi-test:mapcar-safe (fn maybe-list)
   "mapcar enable to iterate maybe-list (include dot-list)"
   (let ((r (list)) (xs maybe-list))
@@ -148,9 +170,6 @@
        (let ((r* (nreverse r)))
          (setcdr (last r*) (funcall fn xs))
          r*)))))
-
-(defmacro chibi-test:expect-macro (body)
-  `(macroexpand-all (quote ,body)))
 
 (defmacro with-chibi-test (&rest exprs)
   (labels ((%replace-and-status
@@ -189,7 +208,8 @@
              tree)))
     `(progn
        ,@(%rec-replace-tree exprs)
-       (chibi-test:short-description))))
+       (chibi-test:short-description)
+       (chibi-test:hide-view-result-after-n-sec))))
 
 (defun chibi-test:short-description ()
   (let ((short-description (format "
@@ -216,9 +236,9 @@
               (message ,err)))))
 
 ;;; test
-(defvar chibi-test-is-running-p nil)
-;;(setq chibi-test-is-running-p t)
-(when chibi-test-is-running-p
+(defvar chibi-test:test-is-running-p nil)
+;;(setq chibi-test:test-is-running-p t)
+(when chibi-test:test-is-running-p
   ;; Don't use chibi-test:<foo> directly as bellow
   (chibi-test:clear)
   (chibi-test:section "using chibi-test:macro, directly")
