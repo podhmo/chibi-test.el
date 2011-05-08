@@ -111,12 +111,33 @@
     (cond ((<= (length content) max-length) content)
           (t (concat (substring content 0 max-length) "...")))))
 
+(defun chibi-test:test-condition (expect result)
+  (equal expect result))
+
+(defun chibi-test:test-not-condition (expect result)
+  (not (equal expect result)))
+
 (defmacro chibi-test:test (message expect expr)
+  (chibi-test:test-internal
+   message expect expr
+   :prefix "test"
+   :condition-function 'chibi-test:test-condition))
+
+(defmacro chibi-test:test-not (message expect expr)
+  (chibi-test:test-internal
+   message expect expr
+   :prefix "test-not"
+   :condition-function 'chibi-test:test-not-condition))
+
+
+(defun* chibi-test:test-internal
+    (message expect expr
+             &key (prefix "test") (condition-function 'chibi-test:test-condition))
   (let ((result (gensym)))
     `(progn
-       (chibi-test:output (format "test: %s" ,message))
+       (chibi-test:output (format "%s: %s" ,prefix ,message))
        (let ((,result ,expr))
-         (cond ((equal ,expect ,result)
+         (cond ((,condition-function ,expect ,result)
                 (chibi-test:output 
                  (propertize (format "ok! %s" (chibi-test:truncate ,result))
                              'face 'chibi-test:success-message-face))
@@ -129,6 +150,7 @@
                  (propertize (format "      return: %s" ,result)
                              'face 'chibi-test:fail-return-value-face))
                 (incf chibi-test:fail-count)))))))
+
 
 (defun chibi-test:section (section)
   (chibi-test:output* (format "--------%s------------" section)))
@@ -182,6 +204,7 @@
                            t 1
                            (%rec-replace-tree child-exprs))))
                 ((clear clear:) (values `(chibi-test:clear ,@(%rec-replace-tree args)) t 0 nil))
+                ((test-not test-not:) (values `(chibi-test:test-not ,@(%rec-replace-tree args)) t 1 nil))
                 ((test test:) (values `(chibi-test:test ,@(%rec-replace-tree args)) t 1 nil))
                 ((macro macro:) (values `(chibi-test:expect-macro ,@args) t 0 nil))
                 (otherwise (values `(,func ,@(%rec-replace-tree args)) nil 0 nil)))))
@@ -257,13 +280,16 @@
   (with-chibi-test
    clear ;; when using `with-chibi-test' clear output buffer manually
    (section "with-chibi-test, with `with-chibi-test'"
-            (test "1+1=2" 2 (+ 1 1))))
+            (test "1+1=2" 2 (+ 1 1))
+            (test-not "1+1=10" 10 (+ 1 1))))
 
   (with-chibi-test*
    (section "utitlity"
             (test 'chibi-test:truncate1 "xx" (chibi-test:truncate "xx"))
             (test 'chibi-test:truncate2 "xx000..."
-                  (chibi-test:truncate "xx00000000000" 5)))
+                  (chibi-test:truncate "xx00000000000" 5))
+            (test-not 'chibi-test:truncate2 "xx00000000000"
+                      (chibi-test:truncate "xx00000000000" 5)))
 
    (section "macro"
             (test "with-chibi-test+section(simple)"
@@ -272,7 +298,8 @@
                        (setq chibi-test:current-level (+ chibi-test:current-level 1))
                        (chibi-test:section "section")
                        (setq chibi-test:current-level (- chibi-test:current-level 1)))
-                     (chibi-test:short-description))
+                     (chibi-test:short-description)
+                     (chibi-test:hide-view-result-after-n-sec))
                   (macro
                    (with-chibi-test
                     (section "section"))))))
