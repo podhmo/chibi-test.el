@@ -66,14 +66,17 @@
     (insert "\n"))
   (apply 'chibi-test:output args))
 
+(defun chibi-test:internal-variables-initialize! ()
+    (setq chibi-test:current-level 0)
+    (setq chibi-test:success-count 0)
+    (setq chibi-test:fail-count 0))
+
 (defun chibi-test:clear () (interactive)
   (let ((buf (get-buffer chibi-test:output-buffer-name)))
     (and buf
          (with-current-buffer buf
            (erase-buffer)))
-    (setq chibi-test:success-count 0)
-    (setq chibi-test:fail-count 0)))
-
+    (chibi-test:internal-variables-initialize!)))
 
 (defface chibi-test:success-message-face
   '((t
@@ -162,7 +165,7 @@
                 ((clear clear:) (values `(chibi-test:clear ,@(%rec-replace-tree args)) t 0 nil))
                 ((test test:) (values `(chibi-test:test ,@(%rec-replace-tree args)) t 1 nil))
                 ((macro macro:) (values `(chibi-test:expect-macro ,@args) t 0 nil))
-                (otherwise (values expr nil 0 nil)))))
+                (otherwise (values `(,func ,@(%rec-replace-tree args)) nil 0 nil)))))
 
            (%change-depth-with-delta
             (body delta &optional chidren)
@@ -172,6 +175,7 @@
                       (incf chibi-test:current-level ,delta)
                       ,body ,@chidren
                       (decf chibi-test:current-level ,delta)))))
+
            (%rec-replace-tree
             (tree)
             (chibi-test:mapcar-safe
@@ -203,9 +207,13 @@
 
 
 (defmacro with-chibi-test* (&rest exprs)
-  `(with-chibi-test
-    clear
-    ,@exprs))
+  (let ((err (gensym)))
+    `(condition-case ,err 
+         (with-chibi-test
+        clear
+        ,@exprs)
+       (error (chibi-test:internal-variables-initialize!)
+              (message ,err)))))
 
 ;;; test
 (defvar chibi-test-is-running-p nil)
