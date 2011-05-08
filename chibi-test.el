@@ -131,9 +131,9 @@
 
 (defmacro chibi-test:test-true (message expr)
   (chibi-test:test-internal
-   message t expr
+   message nil expr
    :prefix "test-true"
-   :condition-function 'chibi-test:test-condition))
+   :condition-function 'chibi-test:test-not-condition))
 
 (defmacro chibi-test:test-false (message expr)
   (chibi-test:test-internal
