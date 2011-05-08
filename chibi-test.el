@@ -131,7 +131,7 @@
                 (incf chibi-test:fail-count)))))))
 
 (defun chibi-test:section (section)
-  (chibi-test:output* (format "section --%s------------" section)))
+  (chibi-test:output* (format "--------%s------------" section)))
 
 (defmacro chibi-test:expect-macro (body)
   `(macroexpand-all (quote ,body)))
