@@ -35,7 +35,7 @@
 ;;                    (test: "macro test(let1)" 
 ;;                           '(let ((b 10)) (* b b))
 ;;                           (macro (let1 b 10 (* b b)))))))
-      
+
 ;; 
 
 ;;; Code:
@@ -67,9 +67,9 @@
   (apply 'chibi-test:output args))
 
 (defun chibi-test:internal-variables-initialize! ()
-    (setq chibi-test:current-level 0)
-    (setq chibi-test:success-count 0)
-    (setq chibi-test:fail-count 0))
+  (setq chibi-test:current-level 0)
+  (setq chibi-test:success-count 0)
+  (setq chibi-test:fail-count 0))
 
 (defun chibi-test:clear () (interactive)
   (let ((buf (get-buffer chibi-test:output-buffer-name)))
@@ -111,6 +111,27 @@
     (cond ((<= (length content) max-length) content)
           (t (concat (substring content 0 max-length) "...")))))
 
+(defun* chibi-test:test-internal
+    (message expect expr
+             &key (prefix "test") (condition-function 'chibi-test:test-condition))
+  (let ((result (gensym)))
+    `(progn
+       (chibi-test:output (format "%s: %s" ,prefix ,message))
+       (let ((,result ,expr))
+         (cond ((,condition-function ,expect ,result)
+                (chibi-test:output 
+                 (propertize (format "ok! %s" (chibi-test:truncate ,result))
+                             'face 'chibi-test:success-message-face))
+                (incf chibi-test:success-count))
+               (t
+                (chibi-test:output 
+                 (propertize (format "fail! expect: %s" ,expect)
+                             'face 'chibi-test:fail-message-face))
+                (chibi-test:output
+                 (propertize (format "      return: %s" ,result)
+                             'face 'chibi-test:fail-return-value-face))
+                (incf chibi-test:fail-count)))))))
+
 (defun chibi-test:test-condition (expect result)
   (equal expect result))
 
@@ -141,28 +162,6 @@
    :prefix "test-false"
    :condition-function 'chibi-test:test-condition))
 
-(defun* chibi-test:test-internal
-    (message expect expr
-             &key (prefix "test") (condition-function 'chibi-test:test-condition))
-  (let ((result (gensym)))
-    `(progn
-       (chibi-test:output (format "%s: %s" ,prefix ,message))
-       (let ((,result ,expr))
-         (cond ((,condition-function ,expect ,result)
-                (chibi-test:output 
-                 (propertize (format "ok! %s" (chibi-test:truncate ,result))
-                             'face 'chibi-test:success-message-face))
-                 (incf chibi-test:success-count))
-               (t
-                (chibi-test:output 
-                 (propertize (format "fail! expect: %s" ,expect)
-                             'face 'chibi-test:fail-message-face))
-                (chibi-test:output
-                 (propertize (format "      return: %s" ,result)
-                             'face 'chibi-test:fail-return-value-face))
-                (incf chibi-test:fail-count)))))))
-
-
 (defun chibi-test:section (section)
   (chibi-test:output* (format "--------%s------------" section)))
 
@@ -190,7 +189,7 @@
       
       (when chibi-test:hide-view-result-timer
         (cancel-timer chibi-test:hide-view-result-timer)
-        (setq hibi-test:hide-view-result-timer nil))
+        (setq chibi-test:hide-view-result-timer nil))
 
       (setq chibi-test:hide-view-result-timer
             (run-with-timer 
@@ -272,56 +271,58 @@
   (let ((err (gensym)))
     `(condition-case ,err 
          (with-chibi-test
-        clear
-        ,@exprs)
+          clear
+          ,@exprs)
        (error (chibi-test:internal-variables-initialize!)
               (message ,err)))))
 
 ;;; test
-(defvar chibi-test:test-is-running-p nil)
-;;(setq chibi-test:test-is-running-p t)
-(when chibi-test:test-is-running-p
-  ;; Don't use chibi-test:<foo> directly as bellow
-  (chibi-test:clear)
-  (chibi-test:section "using chibi-test:macro, directly")
-  (chibi-test:test "1+1" 2 (+ 1 1))
-  (chibi-test:test "with-chibi-test(simple)"
-                   '(progn
-                      (progn
-                        (setq chibi-test:current-level (+ chibi-test:current-level 1))
-                        (chibi-test:section "section")
-                        (setq chibi-test:current-level (- chibi-test:current-level 1))))
-                   (chibi-test:expect-macro
-                    (with-chibi-test
-                     (section "section"))))
+(dont-compile
+  (defvar chibi-test:test-is-running-p nil)
+  ;;(setq chibi-test:test-is-running-p t)
 
-  ;; using `with-chibi-test*' rather than `with-chibi-test'
-  (with-chibi-test
-   clear ;; when using `with-chibi-test' clear output buffer manually
-   (section "with-chibi-test, with `with-chibi-test'"
-            (test "1+1=2" 2 (+ 1 1))
-            (test-not "1+1=10" 10 (+ 1 1))))
+  (when chibi-test:test-is-running-p
+    ;; Don't use chibi-test:<foo> directly as bellow
+    (chibi-test:clear)
+    (chibi-test:section "using chibi-test:macro, directly")
+    (chibi-test:test "1+1" 2 (+ 1 1))
+    (chibi-test:test "with-chibi-test(simple)"
+                     '(progn
+                        (progn
+                          (setq chibi-test:current-level (+ chibi-test:current-level 1))
+                          (chibi-test:section "section")
+                          (setq chibi-test:current-level (- chibi-test:current-level 1))))
+                     (chibi-test:expect-macro
+                      (with-chibi-test
+                       (section "section"))))
 
-  (with-chibi-test*
-   (section "utitlity"
-            (test 'chibi-test:truncate1 "xx" (chibi-test:truncate "xx"))
-            (test 'chibi-test:truncate2 "xx000..."
-                  (chibi-test:truncate "xx00000000000" 5))
-            (test-not 'chibi-test:truncate2 "xx00000000000"
-                      (chibi-test:truncate "xx00000000000" 5)))
+    ;; using `with-chibi-test*' rather than `with-chibi-test'
+    (with-chibi-test
+     clear ;; when using `with-chibi-test' clear output buffer manually
+     (section "with-chibi-test, with `with-chibi-test'"
+              (test "1+1=2" 2 (+ 1 1))
+              (test-not "1+1=10" 10 (+ 1 1))))
 
-   (section "macro"
-            (test "with-chibi-test+section(simple)"
-                  '(progn
-                     (progn
-                       (setq chibi-test:current-level (+ chibi-test:current-level 1))
-                       (chibi-test:section "section")
-                       (setq chibi-test:current-level (- chibi-test:current-level 1)))
-                     (chibi-test:short-description)
-                     (chibi-test:hide-view-result-after-n-sec))
-                  (macro
-                   (with-chibi-test
-                    (section "section"))))))
-  )
+    (with-chibi-test*
+     (section "utitlity"
+              (test 'chibi-test:truncate1 "xx" (chibi-test:truncate "xx"))
+              (test 'chibi-test:truncate2 "xx000..."
+                    (chibi-test:truncate "xx00000000000" 5))
+              (test-not 'chibi-test:truncate2 "xx00000000000"
+                        (chibi-test:truncate "xx00000000000" 5)))
+
+     (section "macro"
+              (test "with-chibi-test+section(simple)"
+                    '(progn
+                       (progn
+                         (setq chibi-test:current-level (+ chibi-test:current-level 1))
+                         (chibi-test:section "section")
+                         (setq chibi-test:current-level (- chibi-test:current-level 1)))
+                       (chibi-test:short-description)
+                       (chibi-test:hide-view-result-after-n-sec))
+                    (macro
+                     (with-chibi-test
+                      (section "section"))))))
+    ))
 (provide 'chibi-test)
 ;;; chibi-test.el ends here
